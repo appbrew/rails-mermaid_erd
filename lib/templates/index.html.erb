@@ -7,13 +7,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" href="data:image/svg+xml;base64,<%= Base64.encode64(logo) %>">
   <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
     #mermaid-erd {
       fill: #9c9c9c !important;
     }
   </style>
 </head>
 <body>
-  <div id="app">
+  <div id="app" class="h-full flex flex-col">
     <header class="bg-red-600">
       <nav class="mx-auto px-4">
         <div class="flex w-full items-center justify-between py-4">
@@ -40,8 +44,8 @@
       </nav>
     </header>
 
-    <div class="flex">
-      <div class="w-[250px] border-r border-gray-300 h-full flex-none p-2">
+    <div class="flex flex-1 overflow-hidden">
+      <div class="w-[250px] border-r border-gray-300 flex-none p-2 overflow-y-scroll">
         <div class="p-2">
           <h2 class="font-medium text-gray-900 mb-1">{{i18n[language]["actions"]["title"]}}</h2>
 
@@ -223,14 +227,14 @@
         </div>
       </div>
 
-      <div class="flex-1 bg-gray-900">
-        <div class="space-x-2 inline-flex p-4">
+      <div class="flex-1 bg-gray-900 relative">
+        <div class="space-x-2 inline-flex p-4 absolute z-50">
           <button @click="tab = 'erd'" :class="`text-xs py-1 px-2 rounded hover:bg-white focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-900 ${tab === 'erd' ? 'bg-white text-gray-900' : 'bg-gray-400 text-gray-900'}`">{{i18n[language]["tab"]["erd"]}}</button>
           <button @click="tab = 'code'" :class="`text-xs py-1 px-2 rounded hover:bg-white focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-gray-900 ${tab === 'code' ? 'bg-white text-gray-900' : 'bg-gray-400 text-gray-900'}`">{{i18n[language]["tab"]["code"]}}</button>
         </div>
-        <div v-show="tab === 'erd'" class="px-4 w-full min-h-[calc(100vh-56px-32px-56px)] relative overflow-hidden">
+        <div v-show="tab === 'erd'" class="px-4 w-full h-full relative overflow-hidden">
           <div class="absolute inset-0" :style="zoomStyle" ref="zoomArea">
-            <div id="preview"></div>
+            <div id="preview" class="h-full v-full"></div>
           </div>
 
           <div class="absolute bottom-0 right-0 p-4 space-x-4 flex">
@@ -265,6 +269,7 @@
   <script src="https://cdn.tailwindcss.com/3.1.8?plugins=forms@0.5.2,typography@0.5.4"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/9.1.7/mermaid.min.js"></script>
   <script src="https://unpkg.com/vue@3.2.40/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 
   <script>window.SCHEMA_DATA=<%= result.to_json %></script>
   <script>
@@ -528,7 +533,40 @@
           mermaid.initialize({theme: 'dark', maxTextSize: 99999999})
           mermaid.init()
           graph.value = mermaid.mermaidAPI.render("mermaid-erd", mermaidErd.value);
-          document.getElementById('preview').innerHTML = graph.value
+          const preview = document.getElementById('preview');
+          preview.innerHTML = graph.value;
+
+          // Zoom・Panのためのpatch
+          const svg = d3.select('#mermaid-erd');
+          svg.html("<g>" + svg.html() + "</g>");
+          const inner = svg.select("g");
+          const zoom = d3.zoom().on("zoom", function(event) {
+            inner.attr("transform", event.transform);
+          });
+          svg.call(zoom);
+
+          // 描画範囲をウィンドウサイズに合わせて調整
+          const { width, height } = preview.getBoundingClientRect();
+          svg.attr('width', width);
+          svg.attr('height', height);
+          svg.attr('style', `max-width: ${width}px`);
+          svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+          // SVGコンテンツのサイズを取得
+          const bbox = svg.node().getBBox();
+          const contentWidth = bbox.width;
+          const contentHeight = bbox.height;
+
+          // ズームスケールを計算
+          const scaleX = width / contentWidth;
+          const scaleY = height / contentHeight;
+          const scale = Math.min(scaleX, scaleY);
+
+          // ズームの中心を計算
+          const translateX = (width - contentWidth * scale) / 2 - bbox.x * scale;
+          const translateY = (height - contentHeight * scale) / 2 - bbox.y * scale;
+
+          svg.call(zoom.transform, d3.zoomIdentity.translate(translateX, translateY).scale(scale));
         }
 
         const onCopyMermaid = () => {
